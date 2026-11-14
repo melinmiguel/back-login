@@ -14,7 +14,7 @@ app.use(express.json());
 const MONGO_URI = process.env.MONGO_URI;
 
 mongoose.connect(MONGO_URI, {
-    dbName: 'SenaiBackend' // Garante que vai conectar exatamente nesse banco
+    dbName: 'SenaiBackend'
 })
 .then(() => console.log('Conectado ao MongoDB Atlas (Banco: SenaiBackend)'))
 .catch(err => console.error('Erro ao conectar no MongoDB:', err));
@@ -23,21 +23,21 @@ mongoose.connect(MONGO_URI, {
 // MODELO DA COLLECTION 'usuarios'
 // ==========================================
 const usuarioSchema = new mongoose.Schema({
-    nome: String,
+    nome: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     senha: { type: String, required: true }
 }, { 
-    collection: 'usuarios', // Força o uso exato da collection 'usuarios'
+    collection: 'usuarios',
     versionKey: false 
 });
 
 const Usuario = mongoose.model('Usuario', usuarioSchema);
 
 // ==========================================
-// ROTAS DE LOGIN
+// ROTAS DE LOGIN E USUÁRIOS
 // ==========================================
 
-// Rota principal de autenticação (chamada pelo Gateway em /api/login)
+// 1. Autenticar usuário (Login)
 app.post('/api/login', async (req, res) => {
     try {
         const { email, senha } = req.body;
@@ -46,7 +46,6 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ erro: 'E-mail e senha são obrigatórios.' });
         }
 
-        // Busca o usuário no banco SenaiBackend -> collection usuarios
         const usuarioEncontrado = await Usuario.findOne({ email, senha });
 
         if (!usuarioEncontrado) {
@@ -67,7 +66,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Rota secundária de recuperação (chamada pelo Gateway em /api/login/recuperar-senha)
+// 2. Recuperar senha
 app.post('/api/login/recuperar-senha', async (req, res) => {
     try {
         const { email } = req.body;
@@ -91,7 +90,62 @@ app.post('/api/login/recuperar-senha', async (req, res) => {
     }
 });
 
+// 3. Cadastrar novo usuário
+app.post('/api/usuarios', async (req, res) => {
+    try {
+        const { nome, email, senha } = req.body;
+
+        if (!nome || !email || !senha) {
+            return res.status(400).json({ erro: 'Nome, e-mail e senha são obrigatórios.' });
+        }
+
+        const usuarioExistente = await Usuario.findOne({ email });
+        if (usuarioExistente) {
+            return res.status(409).json({ erro: 'Este e-mail já está cadastrado.' });
+        }
+
+        const novoUsuario = await Usuario.create({ nome, email, senha });
+
+        return res.status(201).json({
+            mensagem: 'Usuário cadastrado com sucesso!',
+            usuario: {
+                id: novoUsuario._id,
+                nome: novoUsuario.nome,
+                email: novoUsuario.email
+            }
+        });
+    } catch (error) {
+        console.error('Erro ao cadastrar usuário:', error);
+        return res.status(500).json({ erro: 'Erro interno ao cadastrar usuário.' });
+    }
+});
+
+// 4. Deletar usuário por ID
+app.delete('/api/usuarios/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ erro: 'ID de usuário inválido.' });
+        }
+
+        const usuarioDeletado = await Usuario.findByIdAndDelete(id);
+
+        if (!usuarioDeletado) {
+            return res.status(404).json({ erro: 'Usuário não encontrado.' });
+        }
+
+        return res.status(200).json({
+            mensagem: 'Usuário deletado com sucesso!',
+            id: usuarioDeletado._id
+        });
+    } catch (error) {
+        console.error('Erro ao deletar usuário:', error);
+        return res.status(500).json({ erro: 'Erro interno ao deletar usuário.' });
+    }
+});
+
 // Inicialização do Servidor
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Microsserviço de Login rodando na porta ${PORT}`);
+    console.log(`Microsserviço de Login/Usuários rodando na porta ${PORT}`);
 });
